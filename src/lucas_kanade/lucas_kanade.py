@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import numpy as np
 import cv2
@@ -15,6 +15,7 @@ feature_params = dict( maxCorners = 100,
 lk_params = dict( winSize  = (15,15),
                   maxLevel = 4,
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
