@@ -5,6 +5,8 @@ import argparse
 import cv2
 import numpy as np
 
+import lucas_kanade as lk
+
 
 class LKTEvaluator:
     def __init__(self, eval_name="", use_opencv=False, corner_params=[], lk_params=[]):
@@ -35,6 +37,8 @@ class LKTEvaluator:
         # run Lucas-Kanade-Method
         if self.use_opencv:
             p1, st, err = cv2.calcOpticalFlowPyrLK(self.frames[0], self.frames[1], p0, None, **self.lk_params)
+        else:
+            p1, st, err = lk.calcOpticalFlowPyrLK(self.frames[0], self.frames[1], p0, None, **self.lk_params)
 
         # reorder good points as (start, end)
         for start, end in zip(p0[st == 1], p1[st == 1]):
