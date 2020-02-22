@@ -68,7 +68,7 @@ if __name__ == '__main__':
                          minDistance=7,
                          blockSize=7
                          )
-    lk_params = dict(winSize=(15, 15),
+    lk_params = dict(winSize=(5, 5),
                      maxLevel=4,
                      criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
