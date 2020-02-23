@@ -70,7 +70,7 @@ if __name__ == '__main__':
                          blockSize=7
                          )
     lk_params = dict(winSize=(5, 5),
-                     maxLevel=2,
+                     maxLevel=3,
                      criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 0.03))
 
     lkt_evaluator = LKTEvaluator(args.name, args.opencv, corner_params, lk_params)

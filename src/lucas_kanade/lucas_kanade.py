@@ -7,7 +7,7 @@ import numpy as np
 def calcOpticalFlowPyrLK(prevImg, nextImg,
                          prevPts, nextPts=[],
                          status=[], er=[],
-                         winSize=(3, 3), maxLevel=5,
+                         winSize=(3, 3), maxLevel=3,
                          criteria=[], flags=[], minEigThreshold=0):
     # check window size
     if winSize[0] % 2 != 1 or winSize[1] % 2 != 1:
@@ -29,7 +29,7 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
 
     st = np.ones((prevPts.shape[0], 1), dtype=bool)  # status
     nextPts = np.zeros(prevPts.shape, dtype=int)
-    err = []
+    err = np.zeros((prevPts.shape[0], 1), dtype=float)
 
     prev_pyramid = buildOpticalFlowPyramid(prevImg, maxLevel)
     next_pyramid = buildOpticalFlowPyramid(nextImg, maxLevel)
@@ -39,9 +39,9 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
 
     for i in range(len(prev_pyramid)-1, -1, -1):
         # get derivatives
-        Ix = cv.Sobel(prev_pyramid[i], -1, 1, 0)
-        Iy = cv.Sobel(prev_pyramid[i], -1, 0, 1)
-        It = np.abs(next_pyramid[i], next_pyramid[i])
+        Ix = cv.Sobel(prev_pyramid[i], -1, 1, 0, 3)
+        Iy = cv.Sobel(prev_pyramid[i], -1, 0, 1, 3)
+        It = next_pyramid[i] - prev_pyramid[i]
         I = (Ix, Iy, It)
 
         for j in range(prevPts.shape[0]):
@@ -51,7 +51,6 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
 
         scalePts(nextPts, 2)
         prevPts = nextPts
-        #print(prevPts)
     return nextPts, st, err
 
 
@@ -87,8 +86,10 @@ def calcPointFlow(I, I_v, prevPt, st, win_ind):
             (x-dx_start):(x+dx_end),
             (y-dy_start):(y+dy_end)].reshape((num_win_elem, 1))
 
-        uv = calcNextPt(Ix_v, Iy_v, It_v).reshape((1, 2))
+        uv, res, s, eig = calcNextPt(Ix_v, Iy_v, It_v)
+        uv = uv.reshape((1, 2))
         nextPt = prevPt + uv
+        print(nextPt, prevPt, uv, res/num_win_elem, s, eig)
         nextPt[0][0] = np.rint(nextPt[0][0])
         nextPt[0][1] = np.rint(nextPt[0][1])
         return nextPt, True
@@ -101,22 +102,32 @@ def calcNextPt(Ix_v, Iy_v, It_v):
     # computes with least squares method y=Sp
     y = np.array(-It_v)
     S = np.concatenate([Ix_v, Iy_v], axis=1)
+
+    # get rid of badly conditioned points
+    eig = np.linalg.eigvals(S.T.dot(S))
+    if np.count_nonzero(eig) != 2:
+        raise ValueError
+
     x, res, rank, s = np.linalg.lstsq(S, y)
-    return x
+
+    # get rid of points with high residue
+    if res/Ix_v.shape[0] > 1000:
+        raise ValueError
+    return x, res, s, eig
 
 
 def buildOpticalFlowPyramid(img, maxLevel, winSize=None,
-                            pyramid=None, pyrBorder=cv.INTER_NEAREST):
-    pyramid = []
+                            pyramid=None):
+    if pyramid is None:
+        pyramid = []
     pyramid.append(img)
-    for i in range(maxLevel+1):
-        pyramid.append(pyrDown(pyramid[i], borderType=pyrBorder))
+    for i in range(maxLevel):
+        pyramid.append(pyrDown(pyramid[i]))
     return pyramid
 
 
 def pyrDown(img, out=None,
-            outSize=None,
-            borderType=cv.INTER_NEAREST):
+            outSize=None):
     if outSize is None:
         outSize = (img.shape[1]//2, img.shape[0]//2)
 
