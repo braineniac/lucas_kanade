@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import cv2
+import cv2 as cv
 import numpy as np
 
 
@@ -39,8 +39,8 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
 
     for i in range(len(prev_pyramid)-1, -1, -1):
         # get derivatives
-        Ix = cv2.Sobel(prev_pyramid[i], -1, 1, 0)
-        Iy = cv2.Sobel(prev_pyramid[i], -1, 0, 1)
+        Ix = cv.Sobel(prev_pyramid[i], -1, 1, 0)
+        Iy = cv.Sobel(prev_pyramid[i], -1, 0, 1)
         It = np.abs(next_pyramid[i], next_pyramid[i])
         I = (Ix, Iy, It)
 
@@ -106,7 +106,7 @@ def calcNextPt(Ix_v, Iy_v, It_v):
 
 
 def buildOpticalFlowPyramid(img, maxLevel, winSize=None,
-                            pyramid=None, pyrBorder=cv2.INTER_NEAREST):
+                            pyramid=None, pyrBorder=cv.INTER_NEAREST):
     pyramid = []
     pyramid.append(img)
     for i in range(maxLevel+1):
@@ -116,7 +116,7 @@ def buildOpticalFlowPyramid(img, maxLevel, winSize=None,
 
 def pyrDown(img, out=None,
             outSize=None,
-            borderType=cv2.INTER_NEAREST):
+            borderType=cv.INTER_NEAREST):
     if outSize is None:
         outSize = (img.shape[1]//2, img.shape[0]//2)
 
@@ -125,6 +125,6 @@ def pyrDown(img, out=None,
     img = np.delete(img, np.arange(0, img.shape[1], 2), 1)
 
     # 5x5 gaussian kernel should be good enough
-    blurred_img = cv2.GaussianBlur(img, (5, 5), 0, 0)
+    blurred_img = cv.GaussianBlur(img, (5, 5), 0, 0)
 
     return blurred_img

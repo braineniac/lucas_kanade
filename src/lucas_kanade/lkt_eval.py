@@ -2,7 +2,7 @@
 
 import os
 import argparse
-import cv2
+import cv2 as cv
 import numpy as np
 
 import lucas_kanade as lk
@@ -21,8 +21,8 @@ class LKTEvaluator:
         relative_path = "/../../middlebury/" + eval_name + "/"
         full_path = module_path + relative_path
 
-        frame0 = cv2.imread(full_path + "frame10.png", cv2.IMREAD_GRAYSCALE)
-        frame1 = cv2.imread(full_path + "frame11.png", cv2.IMREAD_GRAYSCALE)
+        frame0 = cv.imread(full_path + "frame10.png", cv.IMREAD_GRAYSCALE)
+        frame1 = cv.imread(full_path + "frame11.png", cv.IMREAD_GRAYSCALE)
 
         if frame0 is None or frame1 is None:
             print("Data folder not found!")
@@ -32,11 +32,11 @@ class LKTEvaluator:
 
     def evaluate(self):
         # run Shi Tomasi corner detection for finding good points to track
-        p0 = cv2.goodFeaturesToTrack(self.frames[0], mask=None, **self.corner_params)
+        p0 = cv.goodFeaturesToTrack(self.frames[0], mask=None, **self.corner_params)
 
         # run Lucas-Kanade-Method
         if self.use_opencv:
-            p1, st, err = cv2.calcOpticalFlowPyrLK(self.frames[0], self.frames[1], p0, None, **self.lk_params)
+            p1, st, err = cv.calcOpticalFlowPyrLK(self.frames[0], self.frames[1], p0, None, **self.lk_params)
         else:
             p1, st, err = lk.calcOpticalFlowPyrLK(self.frames[0], self.frames[1], p0, None, **self.lk_params)
 
@@ -47,14 +47,14 @@ class LKTEvaluator:
 
     def plot_flow(self):
         mask = np.zeros_like(self.frames[0])
-        mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        mask = cv.cvtColor(mask, cv.COLOR_GRAY2BGR)
         for line in self.flow:
             start, end = line
-            mask = cv2.arrowedLine(mask, start, end, (0, 0, 255), 1)
-        frame0 = cv2.cvtColor(self.frames[0], cv2.COLOR_GRAY2BGR)
-        plot = cv2.add(frame0, mask)
-        cv2.imshow('Optical flow', plot)
-        cv2.waitKey(0)
+            mask = cv.arrowedLine(mask, start, end, (0, 0, 255), 1)
+        frame0 = cv.cvtColor(self.frames[0], cv.COLOR_GRAY2BGR)
+        plot = cv.add(frame0, mask)
+        cv.imshow('Optical flow', plot)
+        cv.waitKey(0)
 
 
 if __name__ == '__main__':
@@ -71,7 +71,7 @@ if __name__ == '__main__':
                          )
     lk_params = dict(winSize=(5, 5),
                      maxLevel=2,
-                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+                     criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 0.03))
 
     lkt_evaluator = LKTEvaluator(args.name, args.opencv, corner_params, lk_params)
     lkt_evaluator.evaluate()
