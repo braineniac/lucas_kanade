@@ -51,7 +51,7 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
 
         scalePts(nextPts, 2)
         prevPts = nextPts
-        print(prevPts)
+        #print(prevPts)
     return nextPts, st, err
 
 
@@ -119,8 +119,12 @@ def pyrDown(img, out=None,
             borderType=cv2.INTER_NEAREST):
     if outSize is None:
         outSize = (img.shape[1]//2, img.shape[0]//2)
+
+    # remove every even row and column
+    img = np.delete(img, np.arange(0, img.shape[0], 2), 0)
+    img = np.delete(img, np.arange(0, img.shape[1], 2), 1)
+
     # 5x5 gaussian kernel should be good enough
     blurred_img = cv2.GaussianBlur(img, (5, 5), 0, 0)
 
-    # Nearest neighbor
-    return cv2.resize(blurred_img, outSize, borderType)
+    return blurred_img
