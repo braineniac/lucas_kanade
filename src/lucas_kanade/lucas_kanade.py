@@ -14,13 +14,7 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
         print("winSize must be an odd number!")
         exit(-1)
 
-    # get derivatives
-    Ix = cv2.Sobel(prevImg, -1, 1, 0)
-    Iy = cv2.Sobel(prevImg, -1, 0, 1)
-    It = np.abs(prevImg, nextImg)
-    I = (Ix, Iy, It)
-
-    # create neighborhood vecotors
+    # create neighborhood vectors
     Ix_v = np.zeros(winSize[0] * winSize[1])
     Iy_v = np.zeros(winSize[0] * winSize[1])
     It_v = np.zeros(winSize[0] * winSize[1])
@@ -33,19 +27,42 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
     dy_end = (winSize[0]//2) + 1
     win_ind = ((dx_start, dx_end), (dy_start, dy_end))
 
-    st = np.zeros((prevPts.shape[0], 1), dtype=bool)  # status
+    st = np.ones((prevPts.shape[0], 1), dtype=bool)  # status
     nextPts = np.zeros(prevPts.shape, dtype=int)
     err = []
 
-    for i in range(0, prevPts.shape[0]):
-        nextPt, status = calcPointFlow(I, I_v, prevPts[i], win_ind)
-        nextPts[i] = nextPt
-        st[i] = status
+    prev_pyramid = buildOpticalFlowPyramid(prevImg, maxLevel)
+    next_pyramid = buildOpticalFlowPyramid(nextImg, maxLevel)
 
+    # scale points for highest level pyramid
+    scalePts(prevPts, 1/(2**maxLevel))
+
+    for i in range(len(prev_pyramid)-1, -1, -1):
+        # get derivatives
+        Ix = cv2.Sobel(prev_pyramid[i], -1, 1, 0)
+        Iy = cv2.Sobel(prev_pyramid[i], -1, 0, 1)
+        It = np.abs(next_pyramid[i], next_pyramid[i])
+        I = (Ix, Iy, It)
+
+        for j in range(prevPts.shape[0]):
+            nextPt, status = calcPointFlow(I, I_v, prevPts[j], st[j], win_ind)
+            nextPts[j] = nextPt
+            st[j] = status
+
+        scalePts(nextPts, 2)
+        prevPts = nextPts
+        print(prevPts)
     return nextPts, st, err
 
 
-def calcPointFlow(I, I_v, prevPt, win_ind):
+def scalePts(Pts, scale):
+    for x in np.nditer(Pts, op_flags=['writeonly']):
+        x[...] = np.rint(x * scale)
+
+
+def calcPointFlow(I, I_v, prevPt, st, win_ind):
+    if not st:
+        return np.nan, False
     Ix, Iy, It = I
     Ix_v, Iy_v, It_v = I_v
 
@@ -88,8 +105,22 @@ def calcNextPt(Ix_v, Iy_v, It_v):
     return x
 
 
-def buildOpticalFlowPyramid(img, pyramid, winSize,
-                            maxLevel, withDerivatives,
-                            pyrBorder, derivBorder,
-                            tryResuseInputImage):
-    pass
+def buildOpticalFlowPyramid(img, maxLevel, winSize=None,
+                            pyramid=None, pyrBorder=cv2.INTER_NEAREST):
+    pyramid = []
+    pyramid.append(img)
+    for i in range(maxLevel+1):
+        pyramid.append(pyrDown(pyramid[i], borderType=pyrBorder))
+    return pyramid
+
+
+def pyrDown(img, out=None,
+            outSize=None,
+            borderType=cv2.INTER_NEAREST):
+    if outSize is None:
+        outSize = (img.shape[1]//2, img.shape[0]//2)
+    # 5x5 gaussian kernel should be good enough
+    blurred_img = cv2.GaussianBlur(img, (5, 5), 0, 0)
+
+    # Nearest neighbor
+    return cv2.resize(blurred_img, outSize, borderType)

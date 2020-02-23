@@ -40,6 +40,7 @@ class LKTEvaluator:
         else:
             p1, st, err = lk.calcOpticalFlowPyrLK(self.frames[0], self.frames[1], p0, None, **self.lk_params)
 
+        # print(p1[st == 1])
         # reorder good points as (start, end)
         for start, end in zip(p0[st == 1], p1[st == 1]):
             self.flow.append((tuple(start), tuple(end)))
@@ -69,7 +70,7 @@ if __name__ == '__main__':
                          blockSize=7
                          )
     lk_params = dict(winSize=(5, 5),
-                     maxLevel=4,
+                     maxLevel=2,
                      criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
     lkt_evaluator = LKTEvaluator(args.name, args.opencv, corner_params, lk_params)
