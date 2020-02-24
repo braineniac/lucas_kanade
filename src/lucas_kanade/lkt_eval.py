@@ -40,9 +40,10 @@ class LKTEvaluator:
         else:
             p1, st, err = lk.calcOpticalFlowPyrLK(self.frames[0], self.frames[1], p0, None, **self.lk_params)
 
-        # print(p1[st == 1])
         # reorder good points as (start, end)
         for start, end in zip(p0[st == 1], p1[st == 1]):
+            # if np.any(np.subtract(end, start)) > 0:
+            #     print(start, end)
             self.flow.append((tuple(start), tuple(end)))
 
     def plot_flow(self):
