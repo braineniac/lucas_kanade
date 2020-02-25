@@ -2,6 +2,8 @@
 
 import cv2 as cv
 import numpy as np
+import multiprocessing as mp
+from multiprocessing.dummy import Pool as Threadpool
 
 
 def calcOpticalFlowPyrLK(prevImg, nextImg,
@@ -14,6 +16,9 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
     if winSize[0] % 2 != 1 or winSize[1] % 2 != 1:
         print("winSize must be an odd number!")
         exit(-1)
+
+    # initialize multiprocessing pool
+    pool = Threadpool(mp.cpu_count())
 
     # create neighborhood vectors
     Ix_v = np.zeros(winSize[0] * winSize[1])
@@ -45,18 +50,28 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
         # scale points for this pyramid level
         scalePts(nextPts, 2)
 
-        for j in range(nextPts.shape[0]):
-            k = 0
-            while(k < criteria[1]):
-                nextPt, status = calcPointFlow(I, I_v, W, nextPts[j], st[j], winSize, minEigThreshold)
-                x_crit = nextPt[0][0] - prevPts[j][0][0] < criteria[2]
-                y_crit = nextPt[0][1] - prevPts[j][0][1] < criteria[2]
-                if x_crit and y_crit:
-                    break
-                nextPts[j] = nextPt
-                st[j] = status
-                k += 1
+        # run all point calculations in parallel
+        pool.starmap(calcPtsFlow, [
+            (I, I_v, W, nextPt, status, winSize, criteria, minEigThreshold) for nextPt, status in zip(nextPts, st)
+        ])
+
+    # close up pool
+    pool.close()
+    pool.join()
     return nextPts, st, err
+
+
+def calcPtsFlow(I, I_v, W, nextPt, status, winSize, criteria, minEigThreshold):
+    k = 0
+    while(k < criteria[1]):
+        prevPt = nextPt
+        nextPt, status = calcPointFlow(I, I_v, W, nextPt, status, winSize, minEigThreshold)
+        x_crit = nextPt[0][0] - prevPt[0][0] < criteria[2]
+        y_crit = nextPt[0][1] - prevPt[0][1] < criteria[2]
+        if x_crit and y_crit:
+            break
+        k += 1
+    return nextPt, status
 
 
 def scalePts(Pts, scale):
