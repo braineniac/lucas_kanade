@@ -9,30 +9,50 @@ from multiprocessing.dummy import Pool as Threadpool
 def calcOpticalFlowPyrLK(prevImg, nextImg,
                          prevPts, nextPts=None,
                          status=None, err=None,
-                         winSize=(5, 5), maxLevel=3,
-                         criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 0.03),
-                         minEigThreshold=1):
+                         winSize=(5, 5), maxLevel=2,
+                         criteria=(cv.TERM_CRITERIA_COUNT, 10),
+                         flags=[],
+                         minEigThreshold=None):
+
     # check window size
     if winSize[0] % 2 != 1 or winSize[1] % 2 != 1:
         print("winSize must be an odd number!")
         exit(-1)
 
+    # check for flags
+    if cv.OPTFLOW_USE_INITIAL_FLOW not in flags:
+        nextPts = np.copy(prevPts)
+
+    # set error type
+    err_type = 0
+    if cv.OPTFLOW_LK_GET_MIN_EIGENVALS in flags:
+        err_type = cv.OPTFLOW_LK_GET_MIN_EIGENVALS
+
+    # criteria check
+    if (criteria[0] != cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT
+            and criteria[0] != cv.TERM_CRITERIA_EPS
+            and criteria[0] != cv.TERM_CRITERIA_COUNT):
+        print("Wrong criteria passed!")
+        exit(-1)
+
+    if status is None:
+        status = np.ones((prevPts.shape[0], 1), dtype=bool)
+    if err is None:
+        err = np.zeros((prevPts.shape[0], 1), dtype=float)
+
     # initialize multiprocessing pool
-    pool = Threadpool(mp.cpu_count())
+    # pool = Threadpool(mp.cpu_count())
+    pool = Threadpool(1)
 
     # create neighborhood vectors
     Ix_v = np.zeros(winSize[0] * winSize[1])
     Iy_v = np.zeros(winSize[0] * winSize[1])
     It_v = np.zeros(winSize[0] * winSize[1])
-    I_v = (Ix_v, Iy_v, It_v)
+    Ixyt_v = (Ix_v, Iy_v, It_v)
 
-    # create wight matrix
+    # create weight matrix
     W = cv.getGaussianKernel(winSize[0] * winSize[1], -1)
     W = np.diagflat(W)
-
-    st = np.ones((prevPts.shape[0], 1), dtype=bool)  # status
-    nextPts = np.copy(prevPts)
-    err = np.zeros((prevPts.shape[0], 1), dtype=float)
 
     prev_pyramid = buildOpticalFlowPyramid(prevImg, maxLevel)
     next_pyramid = buildOpticalFlowPyramid(nextImg, maxLevel)
@@ -45,33 +65,61 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
         Ix = cv.Sobel(prev_pyramid[i], -1, 1, 0, 3)
         Iy = cv.Sobel(prev_pyramid[i], -1, 0, 1, 3)
         It = next_pyramid[i] - prev_pyramid[i]
-        I = (Ix, Iy, It)
+        Ixyt = (Ix, Iy, It)
 
         # scale points for this pyramid level
         scalePts(nextPts, 2)
 
+        for i in range(status.shape[0]):
+            nextPt, st, error = calcNextPt(Ixyt, Ixyt_v, W,
+                                           nextPts[i], status[i], err[i],
+                                           winSize,
+                                           criteria, err_type, minEigThreshold)
+            status[i] = st
+            err[i] = error
+            nextPts[i] = nextPt
         # run all point calculations in parallel
-        pool.starmap(calcPtsFlow, [
-            (I, I_v, W, nextPt, status, winSize, criteria, minEigThreshold) for nextPt, status in zip(nextPts, st)
-        ])
+        # pool.starmap(calcPtsFlow, [
+        #     (Ixyt, Ixyt_v, W,
+        #      nextPt, st, error, winSize,
+        #      criteria, err_type, minEigThreshold)
+        #     for nextPt, st, error in zip(nextPts, status, err)])
+        print(nextPts[status==1], err[status==1])
 
     # close up pool
     pool.close()
     pool.join()
-    return nextPts, st, err
+
+    return nextPts, status, err
 
 
-def calcPtsFlow(I, I_v, W, nextPt, status, winSize, criteria, minEigThreshold):
-    k = 0
-    while(k < criteria[1]):
-        prevPt = nextPt
-        nextPt, status = calcPointFlow(I, I_v, W, nextPt, status, winSize, minEigThreshold)
-        x_crit = nextPt[0][0] - prevPt[0][0] < criteria[2]
-        y_crit = nextPt[0][1] - prevPt[0][1] < criteria[2]
-        if x_crit and y_crit:
-            break
+def calcNextPt(Ixyt, Ixyt_v, W,
+               nextPt, st, error, winSize,
+               criteria, err_type, minEigThreshold):
+    k = -1
+    it_crit = True
+    delta_uv = 0
+
+    while(it_crit):
+        prevPt = np.copy(nextPt)
         k += 1
-    return nextPt, status
+
+        uv, st, error = calcNeighborhoodFlow(Ixyt, Ixyt_v, W,
+                                             prevPt, st, winSize,
+                                             err_type, minEigThreshold)
+        if criteria[0] == cv.TERM_CRITERIA_COUNT:
+            it_crit = k < criteria[1]
+        elif criteria[0] == cv.TERM_CRITERIA_EPS:
+            delta_uv = np.sqrt(uv[0][0]*uv[0][0] + uv[0][1]*uv[0][1])
+            it_crit = delta_uv > criteria[1]
+        elif criteria[0] == cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT:
+            delta_uv = np.sqrt(uv[0][0]*uv[0][0] + uv[0][1]*uv[0][1])
+            it_crit = delta_uv > criteria[2] and k < criteria[1]
+
+        nextPt[0][0] = np.rint(prevPt[0][0] + uv[0][0])
+        nextPt[0][1] = np.rint(prevPt[0][1] + uv[0][1])
+
+    return nextPt, st, error
 
 
 def scalePts(Pts, scale):
@@ -79,11 +127,20 @@ def scalePts(Pts, scale):
         x[...] = np.rint(x * scale)
 
 
-def calcPointFlow(I, I_v, W, prevPt, st, winSize, minEigThreshold):
+def calcNeighborhoodFlow(Ixyt, Ixyt_v, W,
+                         prevPt, st, winSize,
+                         err_type, minEigThreshold):
+    uv = np.zeros((1, 2))
+    error = 0
+
+    # in case the previous point already failed
     if not st:
-        return prevPt, False
-    Ix, Iy, It = I
-    Ix_v, Iy_v, It_v = I_v
+        return uv, st, error
+
+    st = False
+
+    Ix, Iy, It = Ixyt
+    Ix_v, Iy_v, It_v = Ixyt_v
 
     x, y = prevPt[0]  # remove outer list
     x, y = int(x), int(y)
@@ -106,40 +163,58 @@ def calcPointFlow(I, I_v, W, prevPt, st, winSize, minEigThreshold):
         It_v = It[
             (x-dx_start):(x+dx_end),
             (y-dy_start):(y+dy_end)].reshape((num_win_elem, 1))
-
-        uv, res, s, eig = calcNextPt(Ix_v, Iy_v, It_v, W, winSize, minEigThreshold)
-        uv = uv.reshape((1, 2))
-        nextPt = prevPt + uv
-        # print(nextPt, prevPt, uv, res/num_win_elem, s, eig)
-        nextPt[0][0] = np.rint(nextPt[0][0])
-        nextPt[0][1] = np.rint(nextPt[0][1])
-        return nextPt, True
     except ValueError:
-        # something went wrong with the calculation
-        return prevPt, False
-    except np.linalg.LinAlgError:
-        # calculation didn't converge
-        return prevPt, False
+        # print("Failed to copy neighborhood points!")
+        return uv, False, error
+
+    uv, st, error = calcFlowVector(Ix_v, Iy_v, It_v, W,
+                                   winSize,
+                                   err_type, minEigThreshold)
+    return uv, st, error
 
 
-def calcNextPt(Ix_v, Iy_v, It_v, W, winSize, minEigThreshold):
+def calcFlowVector(Ix_v, Iy_v, It_v, W,
+                   winSize,
+                   err_type, minEigThreshold=None):
+    uv = np.zeros((1, 2))
+    error = 0
+    st = False
+
     # computes with weighted least squares method S_T.W.y=S_T.W.S.p
     y = np.array(-It_v)
     S = np.concatenate([Ix_v, Iy_v], axis=1)
     num_win_elem = winSize[0] * winSize[1]
 
-    # get rid of badly conditioned points
-    eig = np.linalg.eigvals(S.T.dot(S))
+    if (err_type == cv.OPTFLOW_LK_GET_MIN_EIGENVALS
+            or minEigThreshold is not None):
+        try:
+            eig = np.linalg.eigvals(S.T.dot(S))
 
-    if eig[0]/num_win_elem < minEigThreshold or eig[1]/num_win_elem < minEigThreshold:
-        raise ValueError
+            min_eig = np.amin(eig) / num_win_elem
 
-    x, res, rank, s = np.linalg.lstsq(S.T.dot(W).dot(S), S.T.dot(W).dot(y), rcond=-1)
+            if minEigThreshold is not None and min_eig < minEigThreshold:
+                return uv, st, error
+
+        except np.linalg.LinAlgError:
+            return uv, st, error
+
+    try:
+        x = np.linalg.lstsq(S.T.dot(W).dot(S), S.T.dot(W).dot(y), rcond=-1)
+        # x = np.linalg.lstsq(S, y, rcond=-1)
+        uv = x[0].reshape((1, 2))
+    except np.linalg.LinAlgError:
+        return uv, st, error
 
     # filter out points that are undetectably far away
-    if x[0] > winSize[0]//2 or x[1] > winSize[1]//2:
-        raise ValueError
-    return x, res, s, eig
+    if np.any(uv > winSize[0]//2):
+        return uv, st, error
+
+    if err_type == cv.OPTFLOW_LK_GET_MIN_EIGENVALS:
+        error = min_eig
+    else:
+        error = np.sum(uv) / num_win_elem
+
+    return uv, True, error
 
 
 def buildOpticalFlowPyramid(img, maxLevel, winSize=None, pyramid=None):
