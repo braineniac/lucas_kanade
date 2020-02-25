@@ -21,6 +21,10 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
     It_v = np.zeros(winSize[0] * winSize[1])
     I_v = (Ix_v, Iy_v, It_v)
 
+    # create wight matrix
+    W = cv.getGaussianKernel(winSize[0] * winSize[1], -1)
+    W = np.diagflat(W)
+
     st = np.ones((prevPts.shape[0], 1), dtype=bool)  # status
     nextPts = np.copy(prevPts)
     err = np.zeros((prevPts.shape[0], 1), dtype=float)
@@ -44,7 +48,7 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
         for j in range(nextPts.shape[0]):
             k = 0
             while(k < criteria[1]):
-                nextPt, status = calcPointFlow(I, I_v, nextPts[j], st[j], winSize, minEigThreshold)
+                nextPt, status = calcPointFlow(I, I_v, W, nextPts[j], st[j], winSize, minEigThreshold)
                 x_crit = nextPt[0][0] - prevPts[j][0][0] < criteria[2]
                 y_crit = nextPt[0][1] - prevPts[j][0][1] < criteria[2]
                 if x_crit and y_crit:
@@ -60,7 +64,7 @@ def scalePts(Pts, scale):
         x[...] = np.rint(x * scale)
 
 
-def calcPointFlow(I, I_v, prevPt, st, winSize, minEigThreshold):
+def calcPointFlow(I, I_v, W, prevPt, st, winSize, minEigThreshold):
     if not st:
         return prevPt, False
     Ix, Iy, It = I
@@ -88,7 +92,7 @@ def calcPointFlow(I, I_v, prevPt, st, winSize, minEigThreshold):
             (x-dx_start):(x+dx_end),
             (y-dy_start):(y+dy_end)].reshape((num_win_elem, 1))
 
-        uv, res, s, eig = calcNextPt(Ix_v, Iy_v, It_v, winSize, minEigThreshold)
+        uv, res, s, eig = calcNextPt(Ix_v, Iy_v, It_v, W, winSize, minEigThreshold)
         uv = uv.reshape((1, 2))
         nextPt = prevPt + uv
         # print(nextPt, prevPt, uv, res/num_win_elem, s, eig)
@@ -103,17 +107,19 @@ def calcPointFlow(I, I_v, prevPt, st, winSize, minEigThreshold):
         return prevPt, False
 
 
-def calcNextPt(Ix_v, Iy_v, It_v, winSize, minEigThreshold):
-    # computes with least squares method y=Sp
+def calcNextPt(Ix_v, Iy_v, It_v, W, winSize, minEigThreshold):
+    # computes with weighted least squares method S_T.W.y=S_T.W.S.p
     y = np.array(-It_v)
     S = np.concatenate([Ix_v, Iy_v], axis=1)
+    num_win_elem = winSize[0] * winSize[1]
 
     # get rid of badly conditioned points
     eig = np.linalg.eigvals(S.T.dot(S))
-    if eig[0] < minEigThreshold or eig[1] < minEigThreshold:
+
+    if eig[0]/num_win_elem < minEigThreshold or eig[1]/num_win_elem < minEigThreshold:
         raise ValueError
 
-    x, res, rank, s = np.linalg.lstsq(S, y, rcond=-1)
+    x, res, rank, s = np.linalg.lstsq(S.T.dot(W).dot(S), S.T.dot(W).dot(y), rcond=-1)
 
     # filter out points that are undetectably far away
     if x[0] > winSize[0]//2 or x[1] > winSize[1]//2:
