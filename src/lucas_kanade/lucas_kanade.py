@@ -91,6 +91,7 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
             nextPts[j] = nextPt
             status[j] = st
             err[j] = error
+            # print(nextPt, st, error)
             j += 1
 
     # close up pool
@@ -221,7 +222,8 @@ def calcFlowVector(Ix_v, Iy_v, It_v, W,
             return uv, st, error
 
     try:
-        x = np.linalg.lstsq(S.T.dot(W).dot(S), S.T.dot(W).dot(y), rcond=-1)
+        # x = np.linalg.lstsq(S.T.dot(W).dot(S), S.T.dot(W).dot(y), rcond=-1)
+        x = np.linalg.lstsq(S, y, rcond=-1)
         uv = x[0].reshape((1, 2))
     except np.linalg.LinAlgError:
         return uv, st, error
@@ -234,7 +236,7 @@ def calcFlowVector(Ix_v, Iy_v, It_v, W,
         error[0] = min_eig
     else:
         error[0] = np.sum(uv) / num_win_elem
-
+    # print(uv)
     return uv, np.ones(1, dtype=bool), error
 
 
