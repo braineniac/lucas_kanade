@@ -41,8 +41,7 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
         err = np.zeros((prevPts.shape[0], 1), dtype=float)
 
     # initialize multiprocessing pool
-    # pool = Threadpool(mp.cpu_count())
-    pool = Threadpool(1)
+    pool = Threadpool(mp.cpu_count())
 
     # create neighborhood vectors
     Ix_v = np.zeros(winSize[0] * winSize[1])
@@ -70,21 +69,29 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
         # scale points for this pyramid level
         scalePts(nextPts, 2)
 
-        for i in range(status.shape[0]):
-            nextPt, st, error = calcNextPt(Ixyt, Ixyt_v, W,
-                                           nextPts[i], status[i], err[i],
-                                           winSize,
-                                           criteria, err_type, minEigThreshold)
-            status[i] = st
-            err[i] = error
-            nextPts[i] = nextPt
+        # run everything sequentially
+        # for i in range(status.shape[0]):
+        #     nextPt, st, error = calcNextPt(Ixyt, Ixyt_v, W,
+        #                                    nextPts[i], status[i], err[i],
+        #                                    winSize,
+        #                                    criteria, err_type, minEigThreshold)
+        #     status[i] = st
+        #     err[i] = error
+        #     nextPts[i] = nextPt
+
         # run all point calculations in parallel
-        # pool.starmap(calcPtsFlow, [
-        #     (Ixyt, Ixyt_v, W,
-        #      nextPt, st, error, winSize,
-        #      criteria, err_type, minEigThreshold)
-        #     for nextPt, st, error in zip(nextPts, status, err)])
-        print(nextPts[status==1], err[status==1])
+        result = pool.starmap(calcNextPt, [
+            (Ixyt, Ixyt_v, W,
+             nextPt, st, error, winSize,
+             criteria, err_type, minEigThreshold)
+            for nextPt, st, error in zip(nextPts, status, err)])
+
+        j = 0
+        for nextPt, st, error in result:
+            nextPts[j] = nextPt
+            status[j] = st
+            err[j] = error
+            j += 1
 
     # close up pool
     pool.close()
@@ -96,17 +103,35 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
 def calcNextPt(Ixyt, Ixyt_v, W,
                nextPt, st, error, winSize,
                criteria, err_type, minEigThreshold):
+    if not st:
+        return nextPt, st, error
     k = -1
     it_crit = True
     delta_uv = 0
+    loc_error = error
+    loc_st = st
+    loc_Pt = np.copy(nextPt)
 
     while(it_crit):
-        prevPt = np.copy(nextPt)
+        prev_loc_Pt = np.copy(loc_Pt)
+        prev_loc_st = np.copy(loc_st)
+        prev_loc_error = np.copy(loc_error)
+
+        uv, loc_st, loc_error = calcNeighborhoodFlow(Ixyt, Ixyt_v, W,
+                                                     prev_loc_Pt, loc_st, winSize,
+                                                     err_type, minEigThreshold)
+
+        # in case the new flow vector doesn't work out
+        if not loc_st:
+            # print(prev_loc_Pt, prev_loc_st, prev_loc_error)
+            return prev_loc_Pt, prev_loc_st, prev_loc_error
+
+        loc_Pt[0][0] = np.rint(loc_Pt[0][0] + uv[0][0])
+        loc_Pt[0][1] = np.rint(loc_Pt[0][1] + uv[0][1])
+
         k += 1
 
-        uv, st, error = calcNeighborhoodFlow(Ixyt, Ixyt_v, W,
-                                             prevPt, st, winSize,
-                                             err_type, minEigThreshold)
+        # iteration break check
         if criteria[0] == cv.TERM_CRITERIA_COUNT:
             it_crit = k < criteria[1]
         elif criteria[0] == cv.TERM_CRITERIA_EPS:
@@ -116,10 +141,7 @@ def calcNextPt(Ixyt, Ixyt_v, W,
             delta_uv = np.sqrt(uv[0][0]*uv[0][0] + uv[0][1]*uv[0][1])
             it_crit = delta_uv > criteria[2] and k < criteria[1]
 
-        nextPt[0][0] = np.rint(prevPt[0][0] + uv[0][0])
-        nextPt[0][1] = np.rint(prevPt[0][1] + uv[0][1])
-
-    return nextPt, st, error
+    return loc_Pt, loc_st, loc_error
 
 
 def scalePts(Pts, scale):
@@ -131,13 +153,13 @@ def calcNeighborhoodFlow(Ixyt, Ixyt_v, W,
                          prevPt, st, winSize,
                          err_type, minEigThreshold):
     uv = np.zeros((1, 2))
-    error = 0
+    error = np.zeros((1, 1), dtype=float)
 
     # in case the previous point already failed
     if not st:
         return uv, st, error
 
-    st = False
+    st = np.zeros((1, 1), dtype=bool)
 
     Ix, Iy, It = Ixyt
     Ix_v, Iy_v, It_v = Ixyt_v
@@ -165,7 +187,7 @@ def calcNeighborhoodFlow(Ixyt, Ixyt_v, W,
             (y-dy_start):(y+dy_end)].reshape((num_win_elem, 1))
     except ValueError:
         # print("Failed to copy neighborhood points!")
-        return uv, False, error
+        return uv, st, error
 
     uv, st, error = calcFlowVector(Ix_v, Iy_v, It_v, W,
                                    winSize,
@@ -177,8 +199,8 @@ def calcFlowVector(Ix_v, Iy_v, It_v, W,
                    winSize,
                    err_type, minEigThreshold=None):
     uv = np.zeros((1, 2))
-    error = 0
-    st = False
+    error = np.zeros(1, dtype=float)
+    st = np.zeros(1, dtype=bool)
 
     # computes with weighted least squares method S_T.W.y=S_T.W.S.p
     y = np.array(-It_v)
@@ -200,7 +222,6 @@ def calcFlowVector(Ix_v, Iy_v, It_v, W,
 
     try:
         x = np.linalg.lstsq(S.T.dot(W).dot(S), S.T.dot(W).dot(y), rcond=-1)
-        # x = np.linalg.lstsq(S, y, rcond=-1)
         uv = x[0].reshape((1, 2))
     except np.linalg.LinAlgError:
         return uv, st, error
@@ -210,11 +231,11 @@ def calcFlowVector(Ix_v, Iy_v, It_v, W,
         return uv, st, error
 
     if err_type == cv.OPTFLOW_LK_GET_MIN_EIGENVALS:
-        error = min_eig
+        error[0] = min_eig
     else:
-        error = np.sum(uv) / num_win_elem
+        error[0] = np.sum(uv) / num_win_elem
 
-    return uv, True, error
+    return uv, np.ones(1, dtype=bool), error
 
 
 def buildOpticalFlowPyramid(img, maxLevel, winSize=None, pyramid=None):

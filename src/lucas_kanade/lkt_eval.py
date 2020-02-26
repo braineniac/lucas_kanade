@@ -63,6 +63,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", "-n", type=str, default="Dimetrodon")
     parser.add_argument("--opencv", action="store_true")
+    parser.add_argument("--perf", action="store_true")
     args = parser.parse_args()
 
     # Parameters
@@ -71,10 +72,15 @@ if __name__ == '__main__':
                          minDistance=7,
                          blockSize=7
                          )
-    lk_params = dict(winSize=(11, 11),
-                     maxLevel=1,
+    lk_params = dict(winSize=(5, 5),
+                     maxLevel=3,
                      criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 0.1))
 
+    e1 = cv.getTickCount()
     lkt_evaluator = LKTEvaluator(args.name, args.opencv, corner_params, lk_params)
     lkt_evaluator.evaluate()
+    e2 = cv.getTickCount()
+    t = (e2 - e1)/cv.getTickFrequency()
+    if args.perf:
+        print(t)
     lkt_evaluator.plot_flow()
