@@ -115,9 +115,10 @@ def calcNextPt(pyr, Ixyt_v, W,
             prev_loc_st = np.copy(loc_st)
             prev_loc_error = np.copy(loc_error)
 
-            uv, loc_st, loc_error = calcNeighborhoodFlow(Ixyt, Ixyt_v, W,
-                                                         prev_loc_Pt, loc_st, winSize,
-                                                         err_type, minEigThreshold)
+            loc_Pt, loc_st, loc_error = calcNeighborhoodFlow(
+                                            Ixyt, Ixyt_v, W,
+                                            prev_loc_Pt, loc_st, winSize,
+                                            err_type, minEigThreshold)
 
             # in case the new flow vector doesn't work out
             if not loc_st:
@@ -127,18 +128,17 @@ def calcNextPt(pyr, Ixyt_v, W,
                 loc_error = prev_loc_error
                 break
 
-            loc_Pt[0][0] = np.rint(loc_Pt[0][0] + uv[0][0])
-            loc_Pt[0][1] = np.rint(loc_Pt[0][1] + uv[0][1])
-
             k += 1
 
             # iteration break check
             if criteria[0] == cv.TERM_CRITERIA_COUNT:
                 it_crit = k < criteria[1]
             elif criteria[0] == cv.TERM_CRITERIA_EPS:
+                uv = loc_Pt - prev_loc_Pt
                 delta_uv = np.sqrt(uv[0][0]*uv[0][0] + uv[0][1]*uv[0][1])
                 it_crit = delta_uv > criteria[1]
             elif criteria[0] == cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT:
+                uv = loc_Pt - prev_loc_Pt
                 delta_uv = np.sqrt(uv[0][0]*uv[0][0] + uv[0][1]*uv[0][1])
                 it_crit = delta_uv > criteria[2] and k < criteria[1]
 
@@ -148,12 +148,12 @@ def calcNextPt(pyr, Ixyt_v, W,
 def calcNeighborhoodFlow(Ixyt, Ixyt_v, W,
                          prevPt, st, winSize,
                          err_type, minEigThreshold):
-    uv = np.zeros((1, 2))
+    Pt = np.zeros((1, 2))
     error = np.zeros((1, 1), dtype=float)
 
     # in case the previous point already failed
     if not st:
-        return uv, st, error
+        return Pt, st, error
 
     st = np.zeros((1, 1), dtype=bool)
 
@@ -183,18 +183,22 @@ def calcNeighborhoodFlow(Ixyt, Ixyt_v, W,
             (y-dy_start):(y+dy_end)].reshape((num_win_elem, 1))
     except ValueError:
         # print("Failed to copy neighborhood points!")
-        return uv, st, error
+        return Pt, st, error
 
-    uv, st, error = calcFlowVector(Ix_v, Iy_v, It_v, W,
+    Ixyt_v = (Ix_v, Iy_v, It_v)
+
+    Pt, st, error = calcFlowVector(Ixyt_v, prevPt, W,
                                    winSize,
                                    err_type, minEigThreshold)
-    return uv, st, error
+    return Pt, st, error
 
 
-def calcFlowVector(Ix_v, Iy_v, It_v, W,
+def calcFlowVector(Ixyt_v, prevPt, W,
                    winSize,
                    err_type, minEigThreshold=None):
-    uv = np.zeros((1, 2))
+    Ix_v, Iy_v, It_v = Ixyt_v
+
+    Pt = np.zeros((1, 2))
     error = np.zeros(1, dtype=float)
     st = np.zeros(1, dtype=bool)
 
@@ -211,28 +215,31 @@ def calcFlowVector(Ix_v, Iy_v, It_v, W,
             min_eig = np.amin(eig) / num_win_elem
 
             if minEigThreshold is not None and min_eig < minEigThreshold:
-                return uv, st, error
+                return Pt, st, error
 
         except np.linalg.LinAlgError:
-            return uv, st, error
+            return Pt, st, error
 
     try:
         # x = np.linalg.lstsq(S.T.dot(W).dot(S), S.T.dot(W).dot(y), rcond=-1)
         x = np.linalg.lstsq(S, y, rcond=-1)
         uv = x[0].reshape((1, 2))
     except np.linalg.LinAlgError:
-        return uv, st, error
+        return Pt, st, error
 
     # filter out points that are undetectably far away
     if np.any(uv > winSize[0]//2):
-        return uv, st, error
+        return Pt, st, error
 
     if err_type == cv.OPTFLOW_LK_GET_MIN_EIGENVALS:
         error[0] = min_eig
     else:
         error[0] = np.sum(uv) / num_win_elem
-    # print(uv)
-    return uv, np.ones(1, dtype=bool), error
+
+    Pt[0][0] = np.rint(prevPt[0][0] + uv[0][0])
+    Pt[0][1] = np.rint(prevPt[0][1] + uv[0][1])
+
+    return Pt, np.ones(1, dtype=bool), error
 
 
 def buildOpticalFlowPyramid(img, maxLevel, winSize=None, pyramid=None):
