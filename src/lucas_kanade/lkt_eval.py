@@ -6,15 +6,19 @@ import cv2 as cv
 import numpy as np
 
 import lucas_kanade as lk
+import affine_lucas_kanade as alk
 
 
 class LKTEvaluator:
-    def __init__(self, eval_name="", use_opencv=False, corner_params=[], lk_params=[]):
+    def __init__(self, eval_name="",
+                 use_opencv=False, use_affine=False,
+                 corner_params=[], lk_params=[]):
         self.frames = self.load_frames(eval_name)
         self.corner_params = corner_params
         self.lk_params = lk_params
         self.flow = []
         self.use_opencv = use_opencv
+        self.use_affine = use_affine
 
     def load_frames(self, eval_name=None):
         module_path = os.path.dirname(os.path.realpath(__file__))
@@ -36,9 +40,17 @@ class LKTEvaluator:
 
         # run Lucas-Kanade-Method
         if self.use_opencv:
-            p1, st, err = cv.calcOpticalFlowPyrLK(self.frames[0], self.frames[1], p0, None, **self.lk_params)
+            p1, st, err = cv.calcOpticalFlowPyrLK(
+                            self.frames[0], self.frames[1],
+                            p0, None, **self.lk_params)
+        if self.use_affine:
+            p1, st, err = alk.calcOpticalFlowPyrLK(
+                            self.frames[0], self.frames[1],
+                            p0, None, **self.lk_params)
         else:
-            p1, st, err = lk.calcOpticalFlowPyrLK(self.frames[0], self.frames[1], p0, None, **self.lk_params)
+            p1, st, err = lk.calcOpticalFlowPyrLK(
+                            self.frames[0], self.frames[1],
+                            p0, None, **self.lk_params)
 
         # reorder good points as (start, end)
         # print(err)
@@ -64,6 +76,7 @@ if __name__ == '__main__':
     parser.add_argument("--name", "-n", type=str, default="Dimetrodon")
     parser.add_argument("--opencv", action="store_true")
     parser.add_argument("--perf", action="store_true")
+    parser.add_argument("--affine", "-a", action="store_true")
     args = parser.parse_args()
 
     # Parameters
@@ -74,10 +87,13 @@ if __name__ == '__main__':
                          )
     lk_params = dict(winSize=(11, 11),
                      maxLevel=3,
-                     criteria=(cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 4))
+                     criteria=
+                     (cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 4))
 
     e1 = cv.getTickCount()
-    lkt_evaluator = LKTEvaluator(args.name, args.opencv, corner_params, lk_params)
+    lkt_evaluator = LKTEvaluator(args.name,
+                                 args.opencv, args.affine,
+                                 corner_params, lk_params)
     lkt_evaluator.evaluate()
     e2 = cv.getTickCount()
     t = (e2 - e1)/cv.getTickFrequency()

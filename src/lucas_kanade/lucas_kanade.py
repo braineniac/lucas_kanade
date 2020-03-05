@@ -41,8 +41,8 @@ def calcOpticalFlowPyrLK(prevImg, nextImg,
         err = np.zeros((prevPts.shape[0], 1), dtype=float)
 
     # initialize multiprocessing pool
-    pool = Threadpool(mp.cpu_count()//2)
-    # pool = Threadpool(1)
+    # pool = Threadpool(mp.cpu_count()//2)
+    pool = Threadpool(1)
 
     # create neighborhood vectors
     Ix_v = np.zeros(winSize[0] * winSize[1])
